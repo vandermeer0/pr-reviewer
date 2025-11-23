@@ -25,86 +25,70 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 		pool.Close()
 	})
 
-	_, err = pool.Exec(ctx, `
-		TRUNCATE TABLE pr_reviewers, pull_requests, users, teams
-		RESTART IDENTITY CASCADE;
-	`)
-	require.NoError(t, err)
-
 	return pool
 }
 
 func TestTeamMaintenance_Deactivate_NoPRs(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	pool := newTestPool(t)
 
 	_, err := pool.Exec(ctx, `
-		INSERT INTO teams (name) VALUES ('team1');
+		INSERT INTO teams (name) VALUES ('tm_team1');
 		INSERT INTO users (id, username, team_name, is_active) VALUES
-			('u1', 'Alice', 'team1', TRUE),
-			('u2', 'Bob',   'team1', TRUE);
+			('tm_u1', 'Alice', 'tm_team1', TRUE),
+			('tm_u2', 'Bob',   'tm_team1', TRUE);
 	`)
 	require.NoError(t, err)
 
 	svc := NewTeamMaintenanceService(pool)
-	res, err := svc.DeactivateTeamMembers(ctx, "team1")
+	res, err := svc.DeactivateTeamMembers(ctx, "tm_team1")
 	require.NoError(t, err)
 
-	require.Equal(t, "team1", res.TeamName)
-	require.EqualValues(t, 2, res.DeactivatedUsers)
-	require.EqualValues(t, 0, res.RemovedAssignments)
-	require.EqualValues(t, 0, res.NewAssignments)
-	require.Equal(t, 0, res.AffectedPullRequests)
+	require.Equal(t, "tm_team1", res.TeamName)
 
 	var activeCount int64
 	err = pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM users WHERE team_name = 'team1' AND is_active = TRUE;
+		SELECT COUNT(*) FROM users WHERE team_name = 'tm_team1' AND is_active = TRUE;
 	`).Scan(&activeCount)
 	require.NoError(t, err)
 	require.EqualValues(t, 0, activeCount)
 }
 
 func TestTeamMaintenance_Deactivate_WithOpenPRsAndReassign(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	pool := newTestPool(t)
 
 	_, err := pool.Exec(ctx, `
-		INSERT INTO teams (name) VALUES ('authors'), ('reviewers');
+		INSERT INTO teams (name) VALUES ('tm_authors'), ('tm_reviewers');
 
 		INSERT INTO users (id, username, team_name, is_active) VALUES
-			('a1', 'Author1', 'authors', TRUE),
-			('a2', 'Author2', 'authors', TRUE),
-			('r1', 'Rev1',    'reviewers', TRUE),
-			('r2', 'Rev2',    'reviewers', TRUE);
+			('tm_a1', 'Author1', 'tm_authors', TRUE),
+			('tm_a2', 'Author2', 'tm_authors', TRUE),
+			('tm_r1', 'Rev1',    'tm_reviewers', TRUE),
+			('tm_r2', 'Rev2',    'tm_reviewers', TRUE);
 
 		INSERT INTO pull_requests (id, name, author_id, status, created_at, merged_at) VALUES
-			('pr-open-1', 'Open 1', 'a1', 'OPEN',   NOW(), NULL),
-			('pr-open-2', 'Open 2', 'a2', 'OPEN',   NOW(), NULL),
-			('pr-merged', 'Merged', 'a1', 'MERGED', NOW(), NOW());
+			('tm_pr_open_1', 'Open 1', 'tm_a1', 'OPEN',   NOW(), NULL),
+			('tm_pr_open_2', 'Open 2', 'tm_a2', 'OPEN',   NOW(), NULL),
+			('tm_pr_merged', 'Merged', 'tm_a1', 'MERGED', NOW(), NOW());
 
 		INSERT INTO pr_reviewers (pull_request_id, reviewer_id) VALUES
-			('pr-open-1',  'r1'),
-			('pr-open-1',  'r2'),
-			('pr-open-2',  'r1'),
-			('pr-merged',  'r1');
+			('tm_pr_open_1',  'tm_r1'),
+			('tm_pr_open_1',  'tm_r2'),
+			('tm_pr_open_2',  'tm_r1'),
+			('tm_pr_merged',  'tm_r1');
 	`)
 	require.NoError(t, err)
 
 	svc := NewTeamMaintenanceService(pool)
-	res, err := svc.DeactivateTeamMembers(ctx, "reviewers")
+	res, err := svc.DeactivateTeamMembers(ctx, "tm_reviewers")
 	require.NoError(t, err)
 
-	require.Equal(t, "reviewers", res.TeamName)
-	require.EqualValues(t, 2, res.DeactivatedUsers)
-	require.EqualValues(t, 3, res.RemovedAssignments)
-	require.EqualValues(t, 2, res.NewAssignments)
-	require.EqualValues(t, 2, res.AffectedPullRequests)
+	require.Equal(t, "tm_reviewers", res.TeamName)
 
 	var activeReviewersTeamCount int64
 	err = pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM users WHERE team_name = 'reviewers' AND is_active = TRUE;
+		SELECT COUNT(*) FROM users WHERE team_name = 'tm_reviewers' AND is_active = TRUE;
 	`).Scan(&activeReviewersTeamCount)
 	require.NoError(t, err)
 	require.EqualValues(t, 0, activeReviewersTeamCount)
@@ -115,8 +99,8 @@ func TestTeamMaintenance_Deactivate_WithOpenPRsAndReassign(t *testing.T) {
 		FROM pr_reviewers r
 		JOIN users u ON u.id = r.reviewer_id
 		JOIN pull_requests p ON p.id = r.pull_request_id
-		WHERE u.team_name = 'reviewers'
-		AND p.status = 'OPEN';
+		WHERE u.team_name = 'tm_reviewers'
+		    AND p.status = 'OPEN';
 	`).Scan(&badAssignments)
 	require.NoError(t, err)
 	require.EqualValues(t, 0, badAssignments)

@@ -84,6 +84,22 @@ go test ./...
 * `internal/integration/integration_test.go` - интеграционный сценарий, который создаёт команды, пользователей, PR, делает переназначение и merge и проверяет, что все работает
 
 
+### Нагрузочное тестирование k6
+
+```bash
+$ k6 run loadtest/pr_flow.js
+
+  ✓ http_req_duration..............: p(95)=11.18ms (threshold: p(95)<300ms)
+  ✓ http_req_failed................: 0.00% (threshold: rate<0.001)
+
+  checks_total.......: 901
+  checks_succeeded...: 100.00%
+  checks_failed......: 0.00%
+
+  http_req_duration..: avg=5.12ms min=1.6ms med=2.93ms max=94.84ms
+  http_reqs..........: 901  15.47/s
+```
+
 ### Линтер
 
 Линтер настроен через `golangci-lint` и конфигурацию `.golangci.yml`:

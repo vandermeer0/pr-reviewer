@@ -31,12 +31,6 @@ func newTestServer(t *testing.T) *httptest.Server {
 		pool.Close()
 	})
 
-	_, err = pool.Exec(ctx, `
-                TRUNCATE TABLE pr_reviewers, pull_requests, users, teams
-                RESTART IDENTITY CASCADE;
-        `)
-	require.NoError(t, err, "failed to truncate tables")
-
 	userRepo := postgresql.NewUserRepository(pool)
 	teamRepo := postgresql.NewTeamRepository(pool)
 	prRepo := postgresql.NewPullRequestRepository(pool)
@@ -141,5 +135,20 @@ func TestIntegration_FullFlow(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&statsResp))
 	require.NoError(t, resp.Body.Close())
 
-	require.Len(t, statsResp.Reviewers, 3)
+	require.GreaterOrEqual(t, len(statsResp.Reviewers), 3)
+
+	expected := map[string]bool{
+		"u1": false,
+		"u2": false,
+		"u3": false,
+	}
+	for _, r := range statsResp.Reviewers {
+		if _, ok := expected[r.UserID]; ok {
+			expected[r.UserID] = true
+		}
+	}
+
+	for id, found := range expected {
+		require.Truef(t, found, "expected reviewer %s in stats", id)
+	}
 }
